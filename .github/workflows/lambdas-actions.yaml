@@ -37,24 +37,29 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push api-to-sqs (Lambda-Webhook)
         id: build-api
         run: |
           IMAGE_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:${{ github.sha }}"
-          docker build -t $IMAGE_URI -f Lambda-Webhook/Dockerfile Lambda-Webhook
-          docker tag $IMAGE_URI ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:latest
-          docker push $IMAGE_URI
-          docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:latest
+          docker buildx build --platform linux/amd64 \
+            -t $IMAGE_URI \
+            -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:latest \
+            -f Lambda-Webhook/Dockerfile Lambda-Webhook \
+            --push
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
       - name: Build and push pipe-to-app-server (Lambda-SQS)
         id: build-pipe
         run: |
           IMAGE_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:${{ github.sha }}"
-          docker build -t $IMAGE_URI -f Lambda-SQS/Dockerfile Lambda-SQS
-          docker tag $IMAGE_URI ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:latest
-          docker push $IMAGE_URI
-          docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:latest
+          docker buildx build --platform linux/amd64 \
+            -t $IMAGE_URI \
+            -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:latest \
+            -f Lambda-SQS/Dockerfile Lambda-SQS \
+            --push
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
       - name: Update api-to-sqs Lambda
