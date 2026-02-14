@@ -20,7 +20,7 @@ from .parsers import TicketParser, WebhookParser
 from .services import SQSService
 from .utils import create_response
 
-logger = logging.getLogger()
+logger = logging.getLogger(
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
