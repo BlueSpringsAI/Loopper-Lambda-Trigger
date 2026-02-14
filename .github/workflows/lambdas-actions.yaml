@@ -48,7 +48,7 @@ jobs:
             -t $IMAGE_URI \
             -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:latest \
             -f Lambda-Webhook/Dockerfile Lambda-Webhook \
-            --push
+            --output type=image,push=true,oci-mediatypes=false
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
       - name: Build and push pipe-to-app-server (Lambda-SQS)
@@ -59,7 +59,7 @@ jobs:
             -t $IMAGE_URI \
             -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:latest \
             -f Lambda-SQS/Dockerfile Lambda-SQS \
-            --push
+            --output type=image,push=true,oci-mediatypes=false
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
       - name: Check if Lambda functions exist
