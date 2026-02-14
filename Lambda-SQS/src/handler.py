@@ -17,7 +17,7 @@ from typing import Any
 from .clients import HttpClient
 from .config import Config
 
-logger = logging.getLogger(
+logger = logging.getLogger()
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
