@@ -44,7 +44,7 @@ jobs:
         id: build-api
         run: |
           IMAGE_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:${{ github.sha }}"
-          docker buildx build --platform linux/amd64 \
+          docker buildx build --platform linux/amd64 --provenance=false \
             -t $IMAGE_URI \
             -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:latest \
             -f Lambda-Webhook/Dockerfile Lambda-Webhook \
@@ -55,7 +55,7 @@ jobs:
         id: build-pipe
         run: |
           IMAGE_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:${{ github.sha }}"
-          docker buildx build --platform linux/amd64 \
+          docker buildx build --platform linux/amd64 --provenance=false \
             -t $IMAGE_URI \
             -t ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:latest \
             -f Lambda-SQS/Dockerfile Lambda-SQS \
