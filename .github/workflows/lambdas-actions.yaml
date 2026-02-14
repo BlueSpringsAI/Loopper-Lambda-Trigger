@@ -5,8 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'api-to-sqs/**'
-      - 'pipe-to-app-server/**'
+      - 'Lambda-Webhook/**'
+      - 'Lambda-SQS/**'
   workflow_dispatch:
 
 env:
@@ -37,28 +37,21 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Get ECR registry URL
-        id: registry
-        run: |
-          REGISTRY=$(echo ${{ steps.ecr.outputs.registry }})
-          echo "registry=$REGISTRY" >> $GITHUB_OUTPUT
-          echo "REGISTRY=$REGISTRY" >> $GITHUB_ENV
-
-      - name: Build and push api-to-sqs
+      - name: Build and push api-to-sqs (Lambda-Webhook)
         id: build-api
         run: |
           IMAGE_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:${{ github.sha }}"
-          docker build -t $IMAGE_URI -f api-to-sqs/Dockerfile api-to-sqs
+          docker build -t $IMAGE_URI -f Lambda-Webhook/Dockerfile Lambda-Webhook
           docker tag $IMAGE_URI ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:latest
           docker push $IMAGE_URI
           docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:latest
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
-      - name: Build and push pipe-to-app-server
+      - name: Build and push pipe-to-app-server (Lambda-SQS)
         id: build-pipe
         run: |
           IMAGE_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:${{ github.sha }}"
-          docker build -t $IMAGE_URI -f pipe-to-app-server/Dockerfile pipe-to-app-server
+          docker build -t $IMAGE_URI -f Lambda-SQS/Dockerfile Lambda-SQS
           docker tag $IMAGE_URI ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:latest
           docker push $IMAGE_URI
           docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:latest
@@ -93,5 +86,5 @@ jobs:
       - name: Summary
         run: |
           echo "### Lambda Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- **api-to-sqs**: ${{ steps.build-api.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **pipe-to-app-server**: ${{ steps.build-pipe.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **api-to-sqs** (Lambda-Webhook): ${{ steps.build-api.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **pipe-to-app-server** (Lambda-SQS): ${{ steps.build-pipe.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
