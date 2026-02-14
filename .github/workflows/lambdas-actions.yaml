@@ -1,0 +1,97 @@
+name: "Lambda - Build, Push ECR, Update Functions"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'api-to-sqs/**'
+      - 'pipe-to-app-server/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-central-1
+  ECR_REPOSITORY_API_TO_SQS: api-to-sqs
+  ECR_REPOSITORY_PIPE_TO_APP: pipe-to-app-server
+  LAMBDA_API_TO_SQS: loopper-ai-staging-api-to-sqs
+  LAMBDA_PIPE_TO_APP: loopper-ai-staging-pipe-to-app-server
+
+jobs:
+  build-and-deploy:
+    name: "Build, Push, Update Lambdas"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_ACCESS_KEY_SECRET }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get ECR registry URL
+        id: registry
+        run: |
+          REGISTRY=$(echo ${{ steps.ecr.outputs.registry }})
+          echo "registry=$REGISTRY" >> $GITHUB_OUTPUT
+          echo "REGISTRY=$REGISTRY" >> $GITHUB_ENV
+
+      - name: Build and push api-to-sqs
+        id: build-api
+        run: |
+          IMAGE_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:${{ github.sha }}"
+          docker build -t $IMAGE_URI -f api-to-sqs/Dockerfile api-to-sqs
+          docker tag $IMAGE_URI ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:latest
+          docker push $IMAGE_URI
+          docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:latest
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+      - name: Build and push pipe-to-app-server
+        id: build-pipe
+        run: |
+          IMAGE_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:${{ github.sha }}"
+          docker build -t $IMAGE_URI -f pipe-to-app-server/Dockerfile pipe-to-app-server
+          docker tag $IMAGE_URI ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:latest
+          docker push $IMAGE_URI
+          docker push ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:latest
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+      - name: Update api-to-sqs Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_API_TO_SQS }} \
+            --image-uri ${{ steps.build-api.outputs.image_uri }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for api-to-sqs Lambda update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_API_TO_SQS }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Update pipe-to-app-server Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_PIPE_TO_APP }} \
+            --image-uri ${{ steps.build-pipe.outputs.image_uri }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for pipe-to-app-server Lambda update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_PIPE_TO_APP }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Summary
+        run: |
+          echo "### Lambda Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **api-to-sqs**: ${{ steps.build-api.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **pipe-to-app-server**: ${{ steps.build-pipe.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
