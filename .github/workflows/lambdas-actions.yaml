@@ -62,7 +62,22 @@ jobs:
             --push
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
+      - name: Check if Lambda functions exist
+        id: check-lambdas
+        run: |
+          if aws lambda get-function --function-name ${{ env.LAMBDA_API_TO_SQS }} --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "api_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "api_exists=false" >> $GITHUB_OUTPUT
+          fi
+          if aws lambda get-function --function-name ${{ env.LAMBDA_PIPE_TO_APP }} --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "pipe_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "pipe_exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Update api-to-sqs Lambda
+        if: steps.check-lambdas.outputs.api_exists == 'true'
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_API_TO_SQS }} \
@@ -70,12 +85,14 @@ jobs:
             --region ${{ env.AWS_REGION }}
 
       - name: Wait for api-to-sqs Lambda update
+        if: steps.check-lambdas.outputs.api_exists == 'true'
         run: |
           aws lambda wait function-updated \
             --function-name ${{ env.LAMBDA_API_TO_SQS }} \
             --region ${{ env.AWS_REGION }}
 
       - name: Update pipe-to-app-server Lambda
+        if: steps.check-lambdas.outputs.pipe_exists == 'true'
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_PIPE_TO_APP }} \
@@ -83,6 +100,7 @@ jobs:
             --region ${{ env.AWS_REGION }}
 
       - name: Wait for pipe-to-app-server Lambda update
+        if: steps.check-lambdas.outputs.pipe_exists == 'true'
         run: |
           aws lambda wait function-updated \
             --function-name ${{ env.LAMBDA_PIPE_TO_APP }} \
