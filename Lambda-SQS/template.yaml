@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Transform: AWS::Serverless-2016-10-31
+Transform: AWS::Serverless-2016-10-30
 Description: >
   Lambda-SQS: SQS event source mapping → POST to app-server /queue/webhook.
   Uses ReportBatchItemFailures so only failed messages are retried (then DLQ).
