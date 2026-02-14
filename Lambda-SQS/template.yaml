@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Lambda-SQS: SQS event source mapping → POST to app-server /queue/webhook.
+  Uses ReportBatchItemFailures so only failed messages are retried (then DLQ).
+
+# ---------------------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------------------
+Parameters:
+  AppWebhookUrl:
+    Type: String
+    Description: Full URL of the app-server webhook endpoint (e.g. http://<ALB>/queue/webhook)
+
+  QueueArn:
+    Type: String
+    Description: ARN of the SQS FIFO queue to consume from
+
+  DlqArn:
+    Type: String
+    Default: ""
+    Description: ARN of the dead-letter queue (optional, configured on source queue)
+
+  RequestTimeout:
+    Type: Number
+    Default: 15
+    Description: HTTP timeout in seconds for POST to app server
+
+  LogLevel:
+    Type: String
+    Default: INFO
+    AllowedValues: [DEBUG, INFO, WARNING, ERROR]
+    Description: Lambda log level
+
+  BatchSize:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 10
+    Description: Number of SQS messages per Lambda invocation
+
+  MaxBatchingWindowSeconds:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    MaxValue: 300
+    Description: Max seconds to wait for a full batch (0 = no batching delay)
+
+# ---------------------------------------------------------------------------
+# Globals
+# ---------------------------------------------------------------------------
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 256
+    Architectures:
+      - x86_64
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+Resources:
+
+  # --- Lambda Function -----------------------------------------------------
+  SQSForwarderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: loopper-lambda-sqs
+      Handler: src.handler.lambda_handler
+      CodeUri: .
+      Description: Forwards SQS messages to app-server /queue/webhook
+      Environment:
+        Variables:
+          APP_WEBHOOK_URL: !Ref AppWebhookUrl
+          REQUEST_TIMEOUT: !Ref RequestTimeout
+          LOG_LEVEL: !Ref LogLevel
+      Events:
+        SQSTrigger:
+          Type: SQS
+          Properties:
+            Queue: !Ref QueueArn
+            BatchSize: !Ref BatchSize
+            MaximumBatchingWindowInSeconds: !Ref MaxBatchingWindowSeconds
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+            Enabled: true
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !Select [5, !Split [":", !Ref QueueArn]]
+
+  # --- CloudWatch Alarms ---------------------------------------------------
+  ErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${SQSForwarderFunction}-errors"
+      AlarmDescription: Lambda-SQS error rate alarm
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SQSForwarderFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  ThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${SQSForwarderFunction}-throttles"
+      AlarmDescription: Lambda-SQS throttle alarm
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SQSForwarderFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+# ---------------------------------------------------------------------------
+# Outputs
+# ---------------------------------------------------------------------------
+Outputs:
+  FunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt SQSForwarderFunction.Arn
+
+  FunctionName:
+    Description: Lambda function name
+    Value: !Ref SQSForwarderFunction

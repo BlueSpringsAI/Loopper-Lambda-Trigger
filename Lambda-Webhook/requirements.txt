@@ -1,0 +1,8 @@
+# Lambda-Webhook Dependencies
+# Copyright 2025 Loopper-AI
+
+# AWS SDK for Python
+boto3>=1.34.0
+
+# Type checking (development only, included for completeness)
+# mypy>=1.8.0

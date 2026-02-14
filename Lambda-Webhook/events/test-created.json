@@ -1,0 +1,14 @@
+{
+  "body": "{\"freshdesk_webhook\": {\"ticket_id\": \"123\", \"ticket_subject\": \"Test ticket\", \"ticket_description\": \"<p>This is a test description with <b>HTML</b> tags.</p>\", \"ticket_contact_email\": \"customer@example.com\", \"triggered_event\": \"ticket_created\"}}",
+  "isBase64Encoded": false,
+  "requestContext": {
+    "requestId": "test-request-123",
+    "http": {
+      "method": "POST",
+      "path": "/webhook"
+    }
+  },
+  "headers": {
+    "content-type": "application/json"
+  }
+}

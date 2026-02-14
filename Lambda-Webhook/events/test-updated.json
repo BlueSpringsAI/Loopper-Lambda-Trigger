@@ -1,0 +1,14 @@
+{
+  "body": "{\"freshdesk_webhook\": {\"ticket_id\": \"456\", \"triggered_event\": \"ticket_updated\"}}",
+  "isBase64Encoded": false,
+  "requestContext": {
+    "requestId": "test-request-456",
+    "http": {
+      "method": "POST",
+      "path": "/webhook"
+    }
+  },
+  "headers": {
+    "content-type": "application/json"
+  }
+}

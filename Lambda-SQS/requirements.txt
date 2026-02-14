@@ -1,0 +1,6 @@
+# Lambda-SQS Dependencies
+# Copyright 2025 Loopper-AI
+#
+# No external dependencies required.
+# Uses only Python stdlib (urllib, json, ssl, logging, os).
+# boto3 is pre-installed in the Lambda runtime.

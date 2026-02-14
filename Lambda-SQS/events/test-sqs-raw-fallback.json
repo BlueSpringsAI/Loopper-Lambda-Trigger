@@ -1,0 +1,17 @@
+{
+  "Records": [
+    {
+      "messageId": "msg-raw-001",
+      "receiptHandle": "AQEBraw...",
+      "body": "{\"_raw\":true,\"_parse_error\":\"Unknown event type and no ticket data in payload\",\"payload\":{\"freshdesk_webhook\":{\"ticket_id\":\"999\",\"triggered_event\":\"unknown\"}},\"event_type\":\"unknown\",\"ticket_id\":\"999\"}",
+      "attributes": {
+        "ApproximateReceiveCount": "1",
+        "MessageGroupId": "999"
+      },
+      "messageAttributes": {},
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:loopper-webhook-queue.fifo",
+      "awsRegion": "us-east-1"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "Records": [
+    {
+      "messageId": "msg-001",
+      "receiptHandle": "AQEBwJnKyr...",
+      "body": "{\"event_type\":\"created\",\"ticket_id\":\"100\",\"ticket\":{\"ticket_id\":\"100\",\"messages\":[{\"message_index\":0,\"clean_body\":\"First ticket\",\"direction\":\"incoming\"}],\"message_count\":1}}",
+      "attributes": {
+        "ApproximateReceiveCount": "1",
+        "MessageGroupId": "100"
+      },
+      "messageAttributes": {},
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:loopper-webhook-queue.fifo",
+      "awsRegion": "us-east-1"
+    },
+    {
+      "messageId": "msg-002",
+      "receiptHandle": "AQEBxyz...",
+      "body": "{\"event_type\":\"updated\",\"ticket_id\":\"200\",\"ticket\":{\"ticket_id\":\"200\",\"messages\":[{\"message_index\":0,\"clean_body\":\"Second ticket\",\"direction\":\"incoming\"},{\"message_index\":1,\"clean_body\":\"Reply from agent\",\"direction\":\"outgoing\"}],\"message_count\":2}}",
+      "attributes": {
+        "ApproximateReceiveCount": "1",
+        "MessageGroupId": "200"
+      },
+      "messageAttributes": {},
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:loopper-webhook-queue.fifo",
+      "awsRegion": "us-east-1"
+    }
+  ]
+}

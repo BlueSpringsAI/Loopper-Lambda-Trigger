@@ -1,0 +1,22 @@
+{
+  "Records": [
+    {
+      "messageId": "msg-001",
+      "receiptHandle": "AQEBwJnKyr...",
+      "body": "{\"event_type\":\"created\",\"ticket_id\":\"123\",\"ticket\":{\"ticket_id\":\"123\",\"messages\":[{\"message_index\":0,\"timestamp\":\"2025-06-01T10:00:00Z\",\"sender_email\":\"customer@example.com\",\"recipient\":\"support@loopper.com\",\"clean_body\":\"I need help with my order\",\"direction\":\"incoming\",\"language\":null}],\"message_count\":1,\"started_at\":\"2025-06-01T10:00:00Z\",\"last_updated_at\":\"2025-06-01T10:00:00Z\",\"duration_hours\":0.0,\"languages\":[],\"incoming_count\":1,\"outgoing_count\":0,\"conversation_flow\":[\"incoming\"]}}",
+      "attributes": {
+        "ApproximateReceiveCount": "1",
+        "SentTimestamp": "1717236000000",
+        "SenderId": "AROAEXAMPLE",
+        "ApproximateFirstReceiveTimestamp": "1717236000100",
+        "MessageGroupId": "123",
+        "MessageDeduplicationId": "abc123def456"
+      },
+      "messageAttributes": {},
+      "md5OfBody": "e4e68fb7bd0e697a0ae8f1bb342846b3",
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:loopper-webhook-queue.fifo",
+      "awsRegion": "us-east-1"
+    }
+  ]
+}

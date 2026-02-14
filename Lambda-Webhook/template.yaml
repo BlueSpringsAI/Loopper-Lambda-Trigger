@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Lambda-Webhook
+
+  Freshdesk webhook processor: parse, format, and queue to SQS FIFO
+
+# Metadata for SAM CLI
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: loopper-lambda-webhook
+    Description: Freshdesk webhook processor for Loopper-AI
+    Author: Loopper-AI
+    SpdxLicenseId: MIT
+    LicenseUrl: LICENSE
+    ReadmeUrl: README.md
+
+# Global configuration
+Globals:
+  Function:
+    Timeout: 60
+    MemorySize: 512
+    Runtime: python3.12
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+
+# Input parameters
+Parameters:
+  QueueUrl:
+    Type: String
+    Description: SQS FIFO queue URL for webhook messages
+
+  SecretsArn:
+    Type: String
+    Description: ARN of AWS Secrets Manager secret containing Freshdesk credentials
+    Default: ""
+
+  ProcessCreated:
+    Type: String
+    Description: Process ticket created events
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+
+  ProcessUpdated:
+    Type: String
+    Description: Process ticket updated events
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+
+  ApiTimeout:
+    Type: Number
+    Description: Timeout for Freshdesk API calls in seconds
+    Default: 30
+    MinValue: 5
+    MaxValue: 55
+
+# Conditions
+Conditions:
+  HasSecretsArn: !Not [!Equals [!Ref SecretsArn, ""]]
+
+Resources:
+  # Lambda Function
+  LambdaWebhookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: loopper-lambda-webhook
+      Description: Freshdesk webhook processor
+      CodeUri: src/
+      Handler: handler.lambda_handler
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref QueueUrl
+          SECRETS_ARN: !If [HasSecretsArn, !Ref SecretsArn, !Ref AWS::NoValue]
+          PROCESS_CREATED: !Ref ProcessCreated
+          PROCESS_UPDATED: !Ref ProcessUpdated
+          API_TIMEOUT: !Ref ApiTimeout
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            # SQS permissions
+            - Effect: Allow
+              Action:
+                - sqs:SendMessage
+                - sqs:GetQueueAttributes
+                - sqs:GetQueueUrl
+              Resource: !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:*'
+            # Secrets Manager permissions (conditional)
+            - !If
+              - HasSecretsArn
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref SecretsArn
+              - !Ref AWS::NoValue
+      Events:
+        # API Gateway HTTP API endpoint
+        WebhookApi:
+          Type: HttpApi
+          Properties:
+            Path: /webhook
+            Method: POST
+            TimeoutInMillis: 29000
+            PayloadFormatVersion: "2.0"
+      Tags:
+        Project: Loopper
+        Component: Lambda-Webhook
+        Environment: !Ref AWS::StackName
+
+  # CloudWatch Log Group
+  LambdaWebhookLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${LambdaWebhookFunction}'
+      RetentionInDays: 14
+
+  # CloudWatch Alarms
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-lambda-errors'
+      AlarmDescription: Alert when Lambda function has errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LambdaWebhookFunction
+      TreatMissingData: notBreaching
+
+  LambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-lambda-throttles'
+      AlarmDescription: Alert when Lambda function is throttled
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LambdaWebhookFunction
+      TreatMissingData: notBreaching
+
+# Stack outputs
+Outputs:
+  LambdaWebhookFunction:
+    Description: Lambda Function ARN
+    Value: !GetAtt LambdaWebhookFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-FunctionArn'
+
+  LambdaWebhookFunctionIamRole:
+    Description: IAM Role ARN for Lambda Function
+    Value: !GetAtt LambdaWebhookFunctionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-FunctionRoleArn'
+
+  WebhookApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/webhook'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiUrl'
+
+  WebhookApiId:
+    Description: API Gateway ID
+    Value: !Ref ServerlessHttpApi
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiId'
