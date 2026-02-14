@@ -34,29 +34,60 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: ecr
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push api-to-sqs (Lambda-Webhook)
-        id: build-api
+      # ---- api-to-sqs (Lambda-Webhook) ----
+      - name: Build api-to-sqs image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          IMAGE_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:${{ github.sha }}"
-          LATEST_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API_TO_SQS }}:latest"
-          docker build -t $IMAGE_URI -t $LATEST_URI -f Lambda-Webhook/Dockerfile Lambda-Webhook
-          docker push $IMAGE_URI
-          docker push $LATEST_URI
-          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:$IMAGE_TAG -f Lambda-Webhook/Dockerfile Lambda-Webhook
 
-      - name: Build and push pipe-to-app-server (Lambda-SQS)
-        id: build-pipe
+      - name: Tag api-to-sqs latest
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          IMAGE_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:${{ github.sha }}"
-          LATEST_URI="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PIPE_TO_APP }}:latest"
-          docker build -t $IMAGE_URI -t $LATEST_URI -f Lambda-SQS/Dockerfile Lambda-SQS
-          docker push $IMAGE_URI
-          docker push $LATEST_URI
-          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:latest
 
+      - name: Push api-to-sqs to ECR
+        id: push-api
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:latest
+          echo "image_uri=$ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      # ---- pipe-to-app-server (Lambda-SQS) ----
+      - name: Build pipe-to-app-server image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:$IMAGE_TAG -f Lambda-SQS/Dockerfile Lambda-SQS
+
+      - name: Tag pipe-to-app-server latest
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:latest
+
+      - name: Push pipe-to-app-server to ECR
+        id: push-pipe
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:latest
+          echo "image_uri=$ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      # ---- Update Lambda functions (skip if not yet created by Terraform) ----
       - name: Check if Lambda functions exist
         id: check-lambdas
         run: |
@@ -76,7 +107,7 @@ jobs:
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_API_TO_SQS }} \
-            --image-uri ${{ steps.build-api.outputs.image_uri }} \
+            --image-uri ${{ steps.push-api.outputs.image_uri }} \
             --region ${{ env.AWS_REGION }}
 
       - name: Wait for api-to-sqs Lambda update
@@ -91,7 +122,7 @@ jobs:
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_PIPE_TO_APP }} \
-            --image-uri ${{ steps.build-pipe.outputs.image_uri }} \
+            --image-uri ${{ steps.push-pipe.outputs.image_uri }} \
             --region ${{ env.AWS_REGION }}
 
       - name: Wait for pipe-to-app-server Lambda update
@@ -104,5 +135,5 @@ jobs:
       - name: Summary
         run: |
           echo "### Lambda Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- **api-to-sqs** (Lambda-Webhook): ${{ steps.build-api.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **pipe-to-app-server** (Lambda-SQS): ${{ steps.build-pipe.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **api-to-sqs** (Lambda-Webhook): ${{ steps.push-api.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **pipe-to-app-server** (Lambda-SQS): ${{ steps.push-pipe.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
