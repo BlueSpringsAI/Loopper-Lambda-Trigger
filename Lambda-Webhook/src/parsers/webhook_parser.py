@@ -53,6 +53,10 @@ class WebhookParser:
             message_index=0,
             timestamp=now,
             sender_email=requester_email,
+            # Freshdesk's custom-webhook automation payload has no "to"/inbox field,
+            # so the real inbound address isn't available on this no-API-call path.
+            # TicketParser.ticket_to_agent_input(), used whenever the full ticket can
+            # be fetched, reads the real address from Freshdesk's `to_emails` instead.
             recipient="support@loopper.com",
             clean_body=body,
             direction="incoming",

@@ -28,13 +28,18 @@ class TicketParser:
         created_at = ticket_data.get("created_at") or datetime.now(timezone.utc).isoformat()
         updated_at = ticket_data.get("updated_at") or created_at
 
+        # to_emails is the address(es) the customer actually wrote to — Freshdesk
+        # returns it on the ticket resource itself, same as on conversation entries.
+        ticket_to_emails = ticket_data.get("to_emails") or []
+        initial_recipient = ticket_to_emails[0] if ticket_to_emails else "support@loopper.com"
+
         # First message: the ticket description
         messages: list[Message] = [
             Message(
                 message_index=0,
                 timestamp=created_at,
                 sender_email=requester_email,
-                recipient="support@loopper.com",
+                recipient=initial_recipient,
                 clean_body=desc_body,
                 direction="incoming",
             )
