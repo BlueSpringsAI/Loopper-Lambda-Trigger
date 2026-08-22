@@ -62,6 +62,7 @@ class TicketParser:
             messages=messages,
             started_at=created_at,
             last_updated_at=updated_at,
+            responder_id=ticket_data.get("responder_id"),
         )
 
         logger.info("Parsed ticket %s: %d messages", ticket_id, ticket.message_count)

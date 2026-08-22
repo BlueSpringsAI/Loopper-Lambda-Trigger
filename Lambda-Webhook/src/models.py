@@ -42,6 +42,10 @@ class Ticket:
     messages: list[Message]
     started_at: str
     last_updated_at: str
+    # Freshdesk's own agent id (ticket.responder_id) — None when unassigned.
+    # Only populated on the API-fetch path (ticket_to_agent_input); the
+    # no-API-call created-webhook fallback never has it.
+    responder_id: int | None = None
 
     @property
     def message_count(self) -> int:
@@ -71,6 +75,7 @@ class Ticket:
             "incoming_count": self.incoming_count,
             "outgoing_count": self.outgoing_count,
             "conversation_flow": self.conversation_flow,
+            "responder_id": self.responder_id,
         }
 
 
