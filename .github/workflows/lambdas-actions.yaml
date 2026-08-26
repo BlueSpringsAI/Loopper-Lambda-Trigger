@@ -1,26 +1,35 @@
-name: "Lambda - Build, Push ECR, Update Functions"
+name: "Lambda (main) - Zip & Update Functions"
+
+# Deploys straight to the staging Lambda functions on every push to `main`
+# that touches either Lambda's code. Both loopper-ai-staging-api-to-sqs and
+# loopper-ai-staging-pipe-to-app-server are plain Zip-package Lambdas
+# (confirmed via `aws lambda get-function`) that take a single root-level
+# handler.py — no container image, no dependencies beyond boto3 (already in
+# the Lambda Python runtime). This used to build+push a Docker image to ECR
+# and update the functions with --image-uri, but neither ECR repo it targeted
+# ever existed and neither function is image-packaged — every run failed at
+# the ECR push step, before ever reaching an actual function update. Mirrors
+# lambdas-dev-deploy.yaml (dev -> dev), just retargeted at main -> staging.
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'Lambda-Webhook/**'
-      - 'Lambda-SQS/**'
+      - 'Lambda-Webhook/handler.py'
+      - 'Lambda-SQS/handler.py'
   workflow_dispatch:
 
 env:
   AWS_REGION: eu-central-1
-  ECR_REPOSITORY_API_TO_SQS: api-to-sqs
-  ECR_REPOSITORY_PIPE_TO_APP: pipe-to-app-server
   LAMBDA_API_TO_SQS: loopper-ai-staging-api-to-sqs
   LAMBDA_PIPE_TO_APP: loopper-ai-staging-pipe-to-app-server
 
 jobs:
-  build-and-deploy:
-    name: "Build, Push, Update Lambdas"
+  deploy:
+    name: "Zip & Update staging Lambdas"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -33,100 +42,37 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      # ---- api-to-sqs (Lambda-Webhook) ----
-      - name: Build api-to-sqs image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Zip api-to-sqs (Lambda-Webhook)
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:$IMAGE_TAG -f Lambda-Webhook/Dockerfile Lambda-Webhook
+          cd Lambda-Webhook
+          zip -q ../api-to-sqs.zip handler.py
 
-      - name: Tag api-to-sqs latest
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Zip pipe-to-app-server (Lambda-SQS)
         run: |
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:latest
-
-      - name: Push api-to-sqs to ECR
-        id: push-api
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:latest
-          echo "image_uri=$ECR_REGISTRY/$ECR_REPOSITORY_API_TO_SQS:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      # ---- pipe-to-app-server (Lambda-SQS) ----
-      - name: Build pipe-to-app-server image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:$IMAGE_TAG -f Lambda-SQS/Dockerfile Lambda-SQS
-
-      - name: Tag pipe-to-app-server latest
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:latest
-
-      - name: Push pipe-to-app-server to ECR
-        id: push-pipe
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:latest
-          echo "image_uri=$ECR_REGISTRY/$ECR_REPOSITORY_PIPE_TO_APP:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      # ---- Update Lambda functions (skip if not yet created by Terraform) ----
-      - name: Check if Lambda functions exist
-        id: check-lambdas
-        run: |
-          if aws lambda get-function --function-name ${{ env.LAMBDA_API_TO_SQS }} --region ${{ env.AWS_REGION }} 2>/dev/null; then
-            echo "api_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "api_exists=false" >> $GITHUB_OUTPUT
-          fi
-          if aws lambda get-function --function-name ${{ env.LAMBDA_PIPE_TO_APP }} --region ${{ env.AWS_REGION }} 2>/dev/null; then
-            echo "pipe_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "pipe_exists=false" >> $GITHUB_OUTPUT
-          fi
+          cd Lambda-SQS
+          zip -q ../pipe-to-app-server.zip handler.py
 
       - name: Update api-to-sqs Lambda
-        if: steps.check-lambdas.outputs.api_exists == 'true'
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_API_TO_SQS }} \
-            --image-uri ${{ steps.push-api.outputs.image_uri }} \
+            --zip-file fileb://api-to-sqs.zip \
             --region ${{ env.AWS_REGION }}
 
       - name: Wait for api-to-sqs Lambda update
-        if: steps.check-lambdas.outputs.api_exists == 'true'
         run: |
           aws lambda wait function-updated \
             --function-name ${{ env.LAMBDA_API_TO_SQS }} \
             --region ${{ env.AWS_REGION }}
 
       - name: Update pipe-to-app-server Lambda
-        if: steps.check-lambdas.outputs.pipe_exists == 'true'
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_PIPE_TO_APP }} \
-            --image-uri ${{ steps.push-pipe.outputs.image_uri }} \
+            --zip-file fileb://pipe-to-app-server.zip \
             --region ${{ env.AWS_REGION }}
 
       - name: Wait for pipe-to-app-server Lambda update
-        if: steps.check-lambdas.outputs.pipe_exists == 'true'
         run: |
           aws lambda wait function-updated \
             --function-name ${{ env.LAMBDA_PIPE_TO_APP }} \
@@ -134,6 +80,6 @@ jobs:
 
       - name: Summary
         run: |
-          echo "### Lambda Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- **api-to-sqs** (Lambda-Webhook): ${{ steps.push-api.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **pipe-to-app-server** (Lambda-SQS): ${{ steps.push-pipe.outputs.image_uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Staging Lambda Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **api-to-sqs**: ${{ env.LAMBDA_API_TO_SQS }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **pipe-to-app-server**: ${{ env.LAMBDA_PIPE_TO_APP }}" >> $GITHUB_STEP_SUMMARY
