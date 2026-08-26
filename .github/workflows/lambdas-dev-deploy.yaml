@@ -1,0 +1,82 @@
+name: "Lambda (dev) - Zip & Update Functions"
+
+# Deploys straight to the dev Lambda functions on every push to `dev` that
+# touches either Lambda's code. Both loopper-ai-dev-api-to-sqs and
+# loopper-ai-dev-pipe-to-app-server are plain Zip-package Lambdas (confirmed
+# via `aws lambda get-function`) that take a single root-level handler.py —
+# no container image, no dependencies beyond boto3 (already in the Lambda
+# Python runtime). This intentionally does NOT touch the separate
+# lambdas-actions.yaml workflow (main -> staging, image-based).
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'Lambda-Webhook/handler.py'
+      - 'Lambda-SQS/handler.py'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-central-1
+  LAMBDA_API_TO_SQS: loopper-ai-dev-api-to-sqs
+  LAMBDA_PIPE_TO_APP: loopper-ai-dev-pipe-to-app-server
+
+jobs:
+  deploy:
+    name: "Zip & Update dev Lambdas"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Zip api-to-sqs (Lambda-Webhook)
+        run: |
+          cd Lambda-Webhook
+          zip -q ../api-to-sqs.zip handler.py
+
+      - name: Zip pipe-to-app-server (Lambda-SQS)
+        run: |
+          cd Lambda-SQS
+          zip -q ../pipe-to-app-server.zip handler.py
+
+      - name: Update api-to-sqs Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_API_TO_SQS }} \
+            --zip-file fileb://api-to-sqs.zip \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for api-to-sqs Lambda update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_API_TO_SQS }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Update pipe-to-app-server Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_PIPE_TO_APP }} \
+            --zip-file fileb://pipe-to-app-server.zip \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for pipe-to-app-server Lambda update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_PIPE_TO_APP }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Summary
+        run: |
+          echo "### Dev Lambda Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **api-to-sqs**: ${{ env.LAMBDA_API_TO_SQS }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **pipe-to-app-server**: ${{ env.LAMBDA_PIPE_TO_APP }}" >> $GITHUB_STEP_SUMMARY
