@@ -18,12 +18,14 @@ on:
     paths:
       - 'Lambda-Webhook/handler.py'
       - 'Lambda-SQS/handler.py'
+      - 'Lambda-S3-RAG/handler.py'
   workflow_dispatch:
 
 env:
   AWS_REGION: eu-central-1
   LAMBDA_API_TO_SQS: loopper-ai-staging-api-to-sqs
   LAMBDA_PIPE_TO_APP: loopper-ai-staging-pipe-to-app-server
+  LAMBDA_S3_TO_RAG: loopper-ai-staging-s3-to-rag
 
 jobs:
   deploy:
@@ -52,6 +54,11 @@ jobs:
           cd Lambda-SQS
           zip -q ../pipe-to-app-server.zip handler.py
 
+      - name: Zip s3-to-rag (Lambda-S3-RAG)
+        run: |
+          cd Lambda-S3-RAG
+          zip -q ../s3-to-rag.zip handler.py
+
       - name: Update api-to-sqs Lambda
         run: |
           aws lambda update-function-code \
@@ -78,8 +85,22 @@ jobs:
             --function-name ${{ env.LAMBDA_PIPE_TO_APP }} \
             --region ${{ env.AWS_REGION }}
 
+      - name: Update s3-to-rag Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_S3_TO_RAG }} \
+            --zip-file fileb://s3-to-rag.zip \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for s3-to-rag Lambda update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_S3_TO_RAG }} \
+            --region ${{ env.AWS_REGION }}
+
       - name: Summary
         run: |
           echo "### Staging Lambda Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "- **api-to-sqs**: ${{ env.LAMBDA_API_TO_SQS }}" >> $GITHUB_STEP_SUMMARY
           echo "- **pipe-to-app-server**: ${{ env.LAMBDA_PIPE_TO_APP }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **s3-to-rag**: ${{ env.LAMBDA_S3_TO_RAG }}" >> $GITHUB_STEP_SUMMARY
