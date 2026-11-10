@@ -51,12 +51,43 @@ def _dedup_id(*parts: str) -> str:
     return hashlib.sha256("".join(parts).encode()).hexdigest()[:128]
 
 
+# SQS rejects bodies of 256 KB or more; keep some headroom.
+SQS_MAX_BYTES = 250 * 1024
+# Payload values larger than this are dropped when the message is too big.
+TRIM_FIELD_BYTES = 2048
+
+
+def _fit_message(message: dict[str, Any], ticket_id: str) -> str:
+    """JSON body under the SQS limit (#8).
+
+    app-server only reads the envelope's event_type/ticket_id and fetches the
+    ticket from Freshdesk itself, so the payload's large fields (description,
+    HTML) can be dropped from an oversized webhook without losing anything.
+    """
+    body = json.dumps(message, default=str)
+    if len(body.encode()) <= SQS_MAX_BYTES:
+        return body
+    payload = message.get("payload") or {}
+    block_key = "freshdesk_webhook" if isinstance(payload.get("freshdesk_webhook"), dict) else None
+    block = payload[block_key] if block_key else payload
+    small = {k: v for k, v in block.items() if len(json.dumps(v, default=str).encode()) <= TRIM_FIELD_BYTES}
+    trimmed = {block_key: small} if block_key else small
+    logger.warning(
+        "Webhook %d bytes over SQS limit — dropped large payload fields %s ticket_id=%s",
+        len(body.encode()), sorted(set(block) - set(small)), ticket_id,
+    )
+    body = json.dumps({**message, "payload": trimmed, "payload_trimmed": True}, default=str)
+    if len(body.encode()) > SQS_MAX_BYTES:  # still too big: the envelope alone is enough
+        body = json.dumps({**message, "payload": {}, "payload_trimmed": True}, default=str)
+    return body
+
+
 def _send_to_sqs(queue_url: str, body: dict[str, Any], ticket_id: str, dedup: str) -> str | None:
     """Send message to SQS FIFO. Returns message_id or None."""
     try:
         r = _sqs.send_message(
             QueueUrl=queue_url,
-            MessageBody=json.dumps(body, default=str),
+            MessageBody=_fit_message(body, ticket_id),
             MessageGroupId=ticket_id or "default",
             MessageDeduplicationId=dedup,
         )
