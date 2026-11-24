@@ -40,8 +40,8 @@ Lambda-Webhook/
 ├── template.yaml               # Legacy SAM template (builds src/, not used by CI)
 ├── Dockerfile                  # Legacy container image (copies src/, not used by CI)
 ├── Makefile                    # Install/test/lint/SAM helpers (build, lint and package target src/)
-├── ARCHITECTURE.md             # Describes the legacy src/ design
-├── DEPLOYMENT.md               # Describes the legacy SAM deployment
+├── ARCHITECTURE.md             # Outdated: describes the legacy src/ design
+├── DEPLOYMENT.md               # Outdated: describes the legacy SAM deployment
 ├── requirements.txt
 ├── requirements-dev.txt
 ├── pyproject.toml
@@ -84,7 +84,7 @@ The ticket ID is `ticket_id`, else `id`, else `"unknown"`.
 
 ## Message Format
 
-Every message has the same envelope. `_raw` is always `true`; the app server reads `event_type` / `ticket_id` and fetches the ticket from Freshdesk itself (if Freshdesk is rate limited, processing fails and SQS redelivers).
+Every message has the same envelope. `_raw` is always `true`; the app server reads `event_type` / `ticket_id` and fetches the ticket from Freshdesk itself (if Freshdesk is rate limited, processing fails and SQS redelivers with an increasing delay; see [Lambda-SQS retries](../Lambda-SQS/README.md#retries-and-back-off)).
 
 ```json
 {
@@ -121,6 +121,8 @@ Webhooks under the limit are forwarded unchanged.
 
 ## Deployment
 
+> **⚠️ Do not use `make deploy`, `make deploy-guided` or `sam deploy`.** They `sam build` the legacy `template.yaml` (`CodeUri: src/`), which is the old `src/` package that still fetches tickets from Freshdesk. They then deploy it as a separate SAM/CloudFormation stack with the old names: the function is `loopper-lambda-webhook` and has its own HTTP API, and `make logs` assumes stack `loopper-lambda-webhook`. That is not the live `loopper-ai-<env>-api-to-sqs` function. [DEPLOYMENT.md](DEPLOYMENT.md) describes this legacy path and is outdated. **CI is the only deploy path.**
+
 Deployed by GitHub Actions, not SAM. On every push that changes `Lambda-Webhook/handler.py` (or `Lambda-SQS/handler.py` / `Lambda-S3-RAG/handler.py`), and on manual `workflow_dispatch`, CI zips this folder's `handler.py` and updates the function code:
 
 | Branch | Workflow | Function |
@@ -155,7 +157,7 @@ make install
 python -m pytest tests/test_sqs_message_size.py
 ```
 
-`tests/test_handler.py`, `make lint`, `make package`, `make build`/`deploy` and `make local-invoke` all target the legacy `src/` package or SAM stack, not the deployed handler.
+`tests/test_handler.py`, `make lint`, `make package`, `make build`/`deploy` and `make local-invoke` all target the legacy `src/` package or SAM stack, not the deployed handler. Never run `make deploy` (see the warning under [Deployment](#deployment)).
 
 ## Monitoring
 
