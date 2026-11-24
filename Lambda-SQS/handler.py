@@ -9,7 +9,8 @@ Exact POST request:
            App expects an object; it extracts Freshdesk payload from first record's body.
 
 App returns 202 Accepted and processes in background. Lambda uses ReportBatchItemFailures
-so only failed messages are retried (then sent to main queue DLQ).
+so only failed messages are retried (then sent to main queue DLQ). Each failed message is
+retried 90 s later, then 120, 150, 180 … (see retry_delay), not on the queue's fixed timeout.
 """
 from __future__ import annotations
 
@@ -29,6 +30,51 @@ REQUEST_TIMEOUT = 15
 
 # Max bytes of body to log (avoid PII/secrets in logs)
 LOG_BODY_TRUNCATE = 500
+
+# Retry spacing for failed messages: 90 s after the 1st failure, then +30 s per
+# failure (90, 120, 150, 180 …), instead of the queue's fixed visibility timeout.
+# With maxReceiveCount 10 that is ~31 min of tries before the DLQ (was ~15 min).
+RETRY_BASE_S = 90
+RETRY_STEP_S = 30
+RETRY_MAX_S = 900
+
+
+def retry_delay(receive_count: int) -> int:
+    """Seconds until the next try, after the ``receive_count``-th delivery failed."""
+    return min(RETRY_BASE_S + RETRY_STEP_S * (max(receive_count, 1) - 1), RETRY_MAX_S)
+
+
+def _queue_url(arn: str) -> tuple[str, str]:
+    """'arn:aws:sqs:eu-central-1:123:q.fifo' → (region, 'https://sqs.eu-central-1.amazonaws.com/123/q.fifo')."""
+    _, _, _, region, account, name = arn.split(":", 5)
+    return region, f"https://sqs.{region}.amazonaws.com/{account}/{name}"
+
+
+def _back_off(records: list[dict[str, Any]]) -> None:
+    """Hide each failed message for retry_delay(receive count). Best effort: on any
+    error the message just comes back after the queue's visibility timeout."""
+    try:
+        import boto3
+        from botocore.config import Config
+    except Exception:  # pragma: no cover — boto3 ships with the Lambda runtime
+        return
+    clients: dict[str, Any] = {}
+    for rec in records:
+        try:
+            region, url = _queue_url(rec["eventSourceARN"])
+            count = int((rec.get("attributes") or {}).get("ApproximateReceiveCount", "1"))
+            delay = retry_delay(count)
+            if region not in clients:
+                clients[region] = boto3.client(
+                    "sqs", region_name=region,
+                    config=Config(connect_timeout=2, read_timeout=3, retries={"max_attempts": 1}),
+                )
+            clients[region].change_message_visibility(
+                QueueUrl=url, ReceiptHandle=rec["receiptHandle"], VisibilityTimeout=delay,
+            )
+            logger.info("retry in %ds (receive %d) message_id=%s", delay, count, rec.get("messageId"))
+        except Exception as e:
+            logger.warning("could not set retry delay for message_id=%s: %s", rec.get("messageId"), e)
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -136,6 +182,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 failed_ids.append({"itemIdentifier": rec["messageId"]})
 
     if failed_ids:
+        failed = {f["itemIdentifier"] for f in failed_ids}
+        _back_off([r for r in records if isinstance(r, dict) and r.get("messageId") in failed])
         logger.warning("returning batchItemFailures count=%d request_id=%s", len(failed_ids), request_id)
         return {"batchItemFailures": failed_ids}
     return {}
