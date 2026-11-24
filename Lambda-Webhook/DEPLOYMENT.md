@@ -1,3 +1,5 @@
+> **⚠️ Outdated:** this guide describes the legacy SAM/CloudFormation deployment of the `src/` package. That package fetches tickets from the Freshdesk API using Secrets Manager credentials and runs as the `loopper-lambda-webhook` function/stack. None of it is deployed today. CI zips only the root `handler.py`, which forwards webhooks to SQS as-is, and updates `loopper-ai-<env>-api-to-sqs`. Do not follow these steps. See [README.md](README.md).
+
 # Deployment Guide - Lambda-Webhook
 
 ## Prerequisites

@@ -1,3 +1,5 @@
+> **⚠️ Outdated:** this describes the legacy modular `src/` design, which is no longer deployed. That design fetches tickets and conversations from the Freshdesk API, reads Secrets Manager credentials, has a raw-message fallback and is deployed as a SAM/CloudFormation stack. The deployed root `handler.py` queues webhooks to SQS as-is without calling Freshdesk, and CI deploys it to `loopper-ai-<env>-api-to-sqs`. See [README.md](README.md).
+
 # Architecture - Lambda-Webhook
 
 ## System Overview
